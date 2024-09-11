@@ -6,11 +6,13 @@ import {
   Pagination,
   PaginationItem,
   PaginationLink,
+  Alert,
 } from "reactstrap";
 
 import EditUserModal from "./component/EditUserModal";
-import DeleteConfirmationModal from "./component/DeleteConfirmationModal";
-import AddUserModal from "./component/AddUserModal"; // Import AddUserModal
+import DeleteConfirmationModal from "./component/DeleteConfirmationModal"; // Import the new DeleteConfirmationModal
+
+const defaultAvatarUrl = "https://via.placeholder.com/50"; // Temporary avatar for new users
 
 function Index() {
   const [users, setUsers] = useState([]);
@@ -18,14 +20,14 @@ function Index() {
   const [totalPages, setTotalPages] = useState(1);
   const [editUser, setEditUser] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [addUserModalOpen, setAddUserModalOpen] = useState(false); // State for Add User Modal
-  const [userIdToDelete, setUserIdToDelete] = useState(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false); //  confirm deletion
+  const [userIdToDelete, setUserIdToDelete] = useState(null); // user to delete
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
     email: "",
   });
+  const [validationError, setValidationError] = useState(""); // validation error
 
   const fetchUsers = async (page) => {
     try {
@@ -66,58 +68,72 @@ function Index() {
     });
   };
 
+  const validateForm = () => {
+    const { first_name, last_name, email } = formData;
+    if (!first_name || !last_name || !email) {
+      return false;
+    }
+    return true;
+  };
+
   const handleFormSubmit = async () => {
-    try {
-      const response = await fetch(
-        `https://reqres.in/api/users/${editUser.id}`,
-        {
-          method: "PUT",
+    if (!validateForm()) {
+      setValidationError("All fields are required!");
+      return;
+    }
+
+    setValidationError("");
+
+    if (editUser) {
+      // Edit User Mode
+      try {
+        const response = await fetch(
+          `https://reqres.in/api/users/${editUser.id}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(formData),
+          }
+        );
+
+        if (response.ok) {
+          const updatedUser = {
+            ...editUser,
+            ...formData,
+          };
+
+          setUsers(
+            users.map((user) => (user.id === editUser.id ? updatedUser : user))
+          );
+          setModalOpen(false);
+        }
+      } catch (error) {
+        console.error("Error updating user:", error);
+      }
+    } else {
+      try {
+        const response = await fetch(`https://reqres.in/api/users`, {
+          method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(formData), // Only sending editable data here
+          body: JSON.stringify(formData),
+        });
+
+        if (response.ok) {
+          const newUser = await response.json();
+
+          newUser.avatar = newUser.avatar || defaultAvatarUrl;
+
+          // Add the new user to the state
+          setUsers([...users, newUser]);
+          setModalOpen(false);
         }
-      );
-
-      if (response.ok) {
-        const newUserData = {
-          ...editUser,
-          ...formData,
-        };
-
-        setUsers(
-          users.map((user) => (user.id === editUser.id ? newUserData : user))
-        );
-        setModalOpen(false);
+      } catch (error) {
+        console.error("Error adding user:", error);
       }
-    } catch (error) {
-      console.error("Error updating user:", error);
-    }
-  };
-
-  const handleAddUserSubmit = async () => {
-    try {
-      const response = await fetch("https://reqres.in/api/users", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const newUser = {
-          id: users.length + 1, // Generate a new ID (this would normally be returned by the backend)
-          avatar: "https://via.placeholder.com/50", // Placeholder avatar
-          ...formData,
-        };
-        setUsers([...users, newUser]); // Add new user to the list
-        setAddUserModalOpen(false); // Close the add user modal
-        setFormData({ first_name: "", last_name: "", email: "" }); // Reset form data
-      }
-    } catch (error) {
-      console.error("Error adding user:", error);
     }
   };
 
@@ -132,8 +148,8 @@ function Index() {
 
       if (response.ok) {
         setUsers(users.filter((user) => user.id !== userIdToDelete));
-        setDeleteModalOpen(false);
-        setUserIdToDelete(null);
+        setDeleteModalOpen(false); // Close the modal after deleting
+        setUserIdToDelete(null); // Reset the userIdToDelete state
       } else {
         console.error("Failed to delete user");
       }
@@ -143,21 +159,23 @@ function Index() {
   };
 
   const openDeleteModal = (userId) => {
-    setUserIdToDelete(userId);
-    setDeleteModalOpen(true);
-  };
-
-  const openAddUserModal = () => {
-    setAddUserModalOpen(true);
+    setUserIdToDelete(userId); // Set the user ID to delete
+    setDeleteModalOpen(true); // Open the delete confirmation modal
   };
 
   return (
     <Container>
       <div className="mt-3 text-right">
-        <Button color="primary" onClick={openAddUserModal}>
+        <Button color="primary" onClick={() => setModalOpen(true)}>
           + Add User
         </Button>
       </div>
+
+      {validationError && (
+        <Alert color="danger" className="mt-3">
+          {validationError}
+        </Alert>
+      )}
 
       <Table className="mt-3" bordered hover>
         <thead>
@@ -177,7 +195,7 @@ function Index() {
                 <th scope="row">{user.id}</th>
                 <td className="text-center">
                   <img
-                    src={user.avatar}
+                    src={user.avatar || defaultAvatarUrl}
                     alt={`${user.first_name} ${user.last_name}`}
                     width="50"
                     height="50"
@@ -220,7 +238,7 @@ function Index() {
         </PaginationItem>
 
         {[...Array(totalPages)].map((_, index) => (
-          <PaginationItem key={index} active={currentPage === index + 1}>
+          <PaginationItem key={index + 1} active={currentPage === index + 1}>
             <PaginationLink onClick={() => handlePageChange(index + 1)}>
               {index + 1}
             </PaginationLink>
@@ -235,27 +253,20 @@ function Index() {
         </PaginationItem>
       </Pagination>
 
-      {/* Modals for Editing, Deleting, and Adding Users */}
+      {/* Edit User Modal */}
       <EditUserModal
         isOpen={modalOpen}
-        toggle={() => setModalOpen(false)}
+        toggle={() => setModalOpen(!modalOpen)}
         formData={formData}
         handleInputChange={handleInputChange}
         handleFormSubmit={handleFormSubmit}
       />
 
+      {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}
-        toggle={() => setDeleteModalOpen(false)}
-        handleDeleteUser={handleDeleteUser}
-      />
-
-      <AddUserModal
-        isOpen={addUserModalOpen}
-        toggle={() => setAddUserModalOpen(false)}
-        formData={formData}
-        handleInputChange={handleInputChange}
-        handleFormSubmit={handleAddUserSubmit}
+        toggle={() => setDeleteModalOpen(!deleteModalOpen)}
+        onConfirm={handleDeleteUser}
       />
     </Container>
   );
